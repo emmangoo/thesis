@@ -1,53 +1,53 @@
 import pandas as pd
 import numpy as np
 import sqlite3
+import matplotlib.pyplot as plt
 from gene_atlas.testing_atlas import get_gene_info_by_ensg
 import pyarrow as par
-#pd.set_option('display.max_columns', None)
-#pd.set_option('display.width', 5000)
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', 5000)
 
-gtex = pd.read_parquet('gtex.parquet')
-root_cause = pd.read_parquet('root_cause.parquet')
+# print(real_hits['clean_id'].nunique()) => 15490
+# print(hits['clean_id'].nunique()) => 27012
 
-numeric_df = root_cause.select_dtypes(include=[np.number])
+merged = pd.read_parquet('merged_functional.parquet')
 
-matrix = numeric_df.fillna(0).values
+print(merged.head(), '\n', merged.shape, merged['sampleID'].nunique())
 
-rows, cols = np.where(matrix > 0.5)
-
-
-hits = pd.DataFrame({
-    'sampleID': root_cause['sampleID'].values[rows],
-    'geneID': numeric_df.columns[cols],
-    'probability': matrix[rows, cols]
-})
-
-hits = hits.sort_values(by='probability', ascending=False)
-
-top_100_hits = hits.nlargest(100, 'probability')
-
-db_path = '/home/emma/PycharmProjects/thesis/gene_atlas/human_genome.db'
-
-conn = sqlite3.connect(db_path)
+outliers = merged.groupby('sampleID').size().sort_values(ascending=False)
 
 
-functional_genes_query = """
-    SELECT DISTINCT ensembl_gene_id 
-    FROM genes 
-    WHERE ensembl_gene_id IN (SELECT ensembl_id FROM pathways)
-    OR ensembl_gene_id IN (SELECT gene1 FROM interactions)
-"""
-functional_genes = pd.read_sql(functional_genes_query, conn)['ensembl_gene_id'].tolist()
-conn.close()
+# top 5%
+cutoff = int(len(outliers)*0.05)
+outlier_samples = outliers.head(cutoff).index.tolist()
+
+print(f"Top 5%: Samples with more than {outliers.iloc[cutoff]} outliers")
+
+# find common pathways
+def get_sample_pathway_profile(sample_id):
+    sample_hits = merged[merged['sampleID'] == sample_id]['clean_id'].tolist()
+
+    conn = sqlite3.connect('/home/emma/Desktop/thesis/human_genome.db')
+    placeholders = ','.join(['?'] * len(sample_hits))
+    query = f"SELECT pathway_name, COUNT(*) as count FROM pathways WHERE ensembl_id IN ({placeholders}) GROUP BY pathway_name ORDER BY count DESC"
+
+    common_pathways = pd.read_sql(query, conn, params=sample_hits)
+    conn.close()
+    return common_pathways
+
+top_sample = outlier_samples[0]
+nr_outliers = outliers.get(top_sample, 0)
+
+print(f"\nPathway Profile for Sample {top_sample}:\nThis sample has {nr_outliers} outliers\n")
+print(get_sample_pathway_profile(top_sample).head(10))
 
 
-hits['clean_id'] = hits['geneID'].str.split('.').str[0]
 
-real_hits = hits[hits['clean_id'].isin(functional_genes)].copy()
+outliers.hist(bins=50)
+plt.title('Distribution of outliers')
+plt.xlabel('Number of outlier genes')
+plt.ylabel('Number of samples')
+plt.show()
 
-print(f"Found {len(real_hits)} hits with functional data (skipping pseudogenes/noise).")
 
-for _, row in real_hits.head(10).iterrows():
-    print("\n" + "="*50)
-    get_gene_info_by_ensg(db_path, row['geneID'], top_int=5)
-    print(f"Score: {row['probability']}")
+
