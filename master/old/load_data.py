@@ -111,7 +111,7 @@ merged_hits.to_parquet('merged.parquet')
 
 # read in the full parquet file
 
-db_path = '/home/emma/PycharmProjects/thesis/gene_atlas/human_genome.db'
+db_path = '/gene_atlas/human_genome.db'
 hits_path = 'hits.parquet'
 gtex_path = 'gtex_full.parquet'
 output_path = 'merged_functional.parquet'
