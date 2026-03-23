@@ -21,7 +21,7 @@ CNV shows the status of copy number variant
 snv and indel columns have the info about rare small snv and indels.
 """
 
-exp = pd.read_csv('aberrant_expression_outliers.tsv', sep='\t')
+exp = pd.read_csv('/home/emma/Downloads/aberrant_expression_outliers.tsv', sep='\t')
 
 #print(exp.head(), '\n\n')
 
@@ -160,6 +160,76 @@ def plot_pathways_subtypes(full_df, db_path, top_n_pathways=5, top_n_subtypes=6)
     plt.show()
 
 
+def get_significant_subtypes_pathways(full_df, db_path, top_n_pathways=10, min_records=40):
+    counts = full_df['Oncotree Code'].value_counts()
+
+    qualified_subtypes = counts[counts >= min_records].index.tolist()
+
+    subtype_dict = {}
+
+    for ca_type in qualified_subtypes:
+        subtype_data = full_df[full_df['Oncotree Code'] == ca_type]
+
+        pathway_summary = get_top_pathways(subtype_data, db_path, n=top_n_pathways)
+        subtype_dict[ca_type] = pathway_summary
+
+    return subtype_dict
+
+
+def find_cancers_by_pathway_keyword(subtype_dict, keyword):
+    matches = {}
+    keyword = keyword.lower()
+
+    for ca_type, df in subtype_dict.items():
+        matched_rows = df[df['pathway_name'].str.contains(keyword, case=False, na=False)]
+
+        if not matched_rows.empty:
+            matches[ca_type] = matched_rows['pathway_name'].tolist()
+
+    print(f"Cancers with pathways containing '{keyword}'")
+    for ca, pathways in matches.items():
+        print(f"{ca}: {len(pathways)} matches found.")
+
+    return matches
+
+
+def plot_pathway_heatmap(subtype_dict, top_n_pathways=30, title=f"Top Pathways Across Cancer Subtypes", figsize_width=20):
+
+    all_data = []
+    for ca_type, df in subtype_dict.items():
+        temp = df.copy()
+        temp['Subtype'] = ca_type
+        all_data.append(temp)
+
+    long_df = pd.concat(all_data)
+
+
+    pivot_df = long_df.pivot_table(
+        index='pathway_name',
+        columns='Subtype',
+        values='unique_outlier_genes'
+    ).fillna(0)
+
+
+    top_pathways = pivot_df.sum(axis=1).sort_values(ascending=False).head(top_n_pathways).index
+    filtered_pivot = pivot_df.loc[top_pathways]
+
+
+    plt.figure(figsize=(figsize_width, 12))
+    sns.heatmap(
+        filtered_pivot,
+        annot=True,  # Show the actual numbers in the cells
+        fmt=".0f",
+        cmap="YlGnBu",
+        cbar_kws={'label': 'Number of Unique Outlier Genes'}
+    )
+
+    plt.title(title, fontsize=18, fontweight='bold')
+    plt.ylabel("")
+    plt.xlabel("Cancer Subtype (Oncotree Code)")
+    plt.tight_layout()
+    plt.savefig('pathway_heatmap.png')
+    plt.show()
 
 results_to_plot = {
     'All Expression Outliers': get_top_pathways(exp, db_path, n=10),
@@ -174,10 +244,35 @@ to_plot_small = {
     'Underexpression only \n with predisposition genes': get_top_pathways(under_predisp, db_path, n=10)
 }
 
-plot_pathway_comparison(results_to_plot)
+#plot_pathway_comparison(results_to_plot)
 #plot_pathway_comparison(to_plot_small)
-
 #plot_pathways_subtypes(exp, db_path, top_n_pathways=5, top_n_subtypes=6)
+'''
 
+overexp_dict = get_significant_subtypes_pathways(
+    over_predisp,
+    db_path,
+    top_n_pathways=15,
+    min_records=40
+)
+
+underexp_dict = get_significant_subtypes_pathways(
+    under_predisp,
+    db_path,
+    top_n_pathways=15,
+    min_records=40
+)
+'''
+
+all_pathways_dict = get_significant_subtypes_pathways(
+    exp,
+    db_path,
+    top_n_pathways=15,
+    min_records=40
+)
+
+#matches = find_cancers_by_pathway_keyword(all_pathways_dict, keyword='BRCA')
+
+#print(matches.keys())
 
 
