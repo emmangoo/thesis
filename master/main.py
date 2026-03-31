@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sqlite3
-import textwrap
+import re
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 5000)
 
@@ -21,7 +21,7 @@ CNV shows the status of copy number variant
 snv and indel columns have the info about rare small snv and indels.
 """
 
-exp = pd.read_csv('/home/emma/Downloads/aberrant_expression_outliers.tsv', sep='\t')
+exp = pd.read_csv('aberrant_expression_outliers.tsv', sep='\t')
 
 #print(exp.head(), '\n\n')
 
@@ -33,7 +33,7 @@ over_predisp = over[over['padjust_predisp_extended'].notna()]
 under_predisp = under[under['padjust_predisp_extended'].notna()]
 
 
-db_path = '/home/emma/Desktop/thesis/human_genome.db'
+db_path = 'human_genome.db'
 
 
 def get_top_recurrent_genes(df, db_path, n=10):
@@ -193,7 +193,8 @@ def find_cancers_by_pathway_keyword(subtype_dict, keyword):
     return matches
 
 
-def plot_pathway_heatmap(subtype_dict, top_n_pathways=30, title=f"Top Pathways Across Cancer Subtypes", figsize_width=20):
+def plot_pathway_heatmap(subtype_dict, top_n_pathways=30,
+                         title=f"Top Pathways Across Cancer Subtypes", figsize_width=20):
 
     all_data = []
     for ca_type, df in subtype_dict.items():
@@ -231,48 +232,90 @@ def plot_pathway_heatmap(subtype_dict, top_n_pathways=30, title=f"Top Pathways A
     plt.savefig('pathway_heatmap.png')
     plt.show()
 
-results_to_plot = {
-    'All Expression Outliers': get_top_pathways(exp, db_path, n=10),
-    'Overexpression (z score > 0)': get_top_pathways(over, db_path, n=10),
-    'Underexpression (z score < 0)': get_top_pathways(under, db_path, n=10),
-    'Overexpression only with predisposition genes': get_top_pathways(over_predisp, db_path, n=10),
-    'Underexpression only with predisposition genes': get_top_pathways(under_predisp, db_path, n=10)
-}
+def cis_trans(hits):
+    # overexpression zScore > 0, underexpression zScore < 0
+    over = hits['zScore'] > 0
+    under = hits['zScore'] < 0
 
-to_plot_small = {
-    'Overexpression only \n with predisposition genes': get_top_pathways(over_predisp, db_path, n=10),
-    'Underexpression only \n with predisposition genes': get_top_pathways(under_predisp, db_path, n=10)
-}
+    # underexpression: impact "high"
+    snv_cis = (under) & (
+            (hits['IMPACT_snv'] == 'HIGH') |
+            (hits['IMPACT_indel'] == 'HIGH')
+    )
 
-#plot_pathway_comparison(results_to_plot)
-#plot_pathway_comparison(to_plot_small)
-#plot_pathways_subtypes(exp, db_path, top_n_pathways=5, top_n_subtypes=6)
-'''
+    # overexpression: amplification or duplication
+    # underexpression: deletion CNV (germline/ somatic/ heterozygous)
+    cnv_over_cis = (over) & (hits['CNV'].str.contains('AMP|DUP', case=False, na=False))
+    cnv_under_cis = (under) & (hits['CNV'].str.contains('DEL', case=False, na=False))
 
-overexp_dict = get_significant_subtypes_pathways(
-    over_predisp,
-    db_path,
-    top_n_pathways=15,
-    min_records=40
-)
+    cnv_cis = cnv_over_cis | cnv_under_cis
 
-underexp_dict = get_significant_subtypes_pathways(
-    under_predisp,
-    db_path,
-    top_n_pathways=15,
-    min_records=40
-)
-'''
+    hits['Mechanism'] = 'trans effect'
+    hits.loc[snv_cis | cnv_cis, 'Mechanism'] = 'cis effect'
 
-all_pathways_dict = get_significant_subtypes_pathways(
-    exp,
-    db_path,
-    top_n_pathways=15,
-    min_records=40
-)
-
-#matches = find_cancers_by_pathway_keyword(all_pathways_dict, keyword='BRCA')
-
-#print(matches.keys())
+    return hits
 
 
+def find_trans_drivers(df):
+    trans = df[df['Mechanism'] == 'trans effect'][['sample_id', 'geneID_short', 'zScore']]
+    trans.columns = ['sample_id', 'target_gene', 'target_zScore']
+
+    cnv = df[df['CNV'] != 'No CNV'][['sample_id', 'geneID_short', 'CNV']]
+    cnv.columns = ['sample_id', 'driver_gene', 'driver_CNV']
+
+    # maybe use different method if too slow
+    # left join because we want to keep the samples where no CNV outlier was found
+    drivers = pd.merge(trans, cnv, on='sample_id', how='left')
+    # for safety:
+    drivers = drivers[drivers['target_gene'] != drivers['driver_gene']]
+
+    return drivers
+
+
+def get_chromosomal_relationship(results_df, db_path):
+    conn = sqlite3.connect(db_path)
+    coords = pd.read_sql("SELECT ensembl_gene_id as geneID_short, location FROM genes", conn)
+    conn.close()
+
+    def extract_chrom(loc_str):
+        if pd.isna(loc_str) or loc_str == '':
+            return None
+        match = re.match(r'^([0-9,X,Y,M,T]+)', str(loc_str))
+        return match.group(1) if match else None
+
+    coords['chrom'] = coords['location'].apply(extract_chrom)
+
+    results_df = results_df.merge(coords[['geneID_short', 'chrom']],
+                                  left_on='driver_gene', right_on='geneID_short', how='left')
+    results_df = results_df.rename(columns={'chrom': 'driver_chrom'}).drop(columns=['geneID_short'])
+
+    results_df = results_df.merge(coords[['geneID_short', 'chrom']],
+                                  left_on='target_gene', right_on='geneID_short', how='left')
+    results_df = results_df.rename(columns={'chrom': 'target_chrom'}).drop(columns=['geneID_short'])
+
+    results_df['is_trans_chromosomal'] = results_df['driver_chrom'] != results_df['target_chrom']
+
+    valid_pairs = results_df.dropna(subset=['driver_chrom', 'target_chrom'])
+    if not valid_pairs.empty:
+        trans_pc = valid_pairs['is_trans_chromosomal'].mean() * 100
+        print(f"\n--- CHROMOSOMAL ANALYSIS ---")
+        print(f"Percentage of Driver-Target pairs on different chromosomes: {trans_pc:.2f}%")
+    return results_df
+
+
+# check if driver gene and target gene interact with each other
+def check_direct_trans_interaction(driver_symb, target_symb, db_path):
+    conn = sqlite3.connect(db_path)
+    query = f"""
+        SELECT i.combined_score 
+        FROM interactions i
+        JOIN genes g1 ON i.gene1 = g1.ensembl_gene_id
+        JOIN genes g2 ON i.gene2 = g2.ensembl_gene_id
+        WHERE g1.symbol = '{driver_symb}' AND g2.symbol = '{target_symb}'
+    """
+    score = pd.read_sql(query, conn)
+    conn.close()
+
+    if not score.empty:
+        return score.iloc[0]['combined_score']
+    return None
