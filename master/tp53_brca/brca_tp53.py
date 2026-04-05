@@ -45,7 +45,7 @@ def analyse_pathway_cis_trans(df, db_path, keyword):
 brca = analyse_pathway_cis_trans(exp, db_path, 'BRCA')
 tp53 = analyse_pathway_cis_trans(exp, db_path, 'TP53')
 
-'''
+
 def check_molecular_chaos(story_df, title):
     summary = story_df.groupby(['Oncotree Code', 'Mechanism']).size().unstack(fill_value=0)
 
@@ -101,4 +101,3 @@ def plot_zscore_distribution(story_df, title):
 
 plot_zscore_distribution(brca, "BRCA Pathway")
 plot_zscore_distribution(tp53, "TP53 Pathway")
-'''
