@@ -1,8 +1,5 @@
-import sqlite3
-import pandas as pd
 from main import *
-import matplotlib.pyplot as plt
-import seaborn as sns
+
 
 db_path = '/home/emma/Desktop/thesis/human_genome.db'
 
