@@ -22,6 +22,17 @@ under_predisp = under[under['padjust_predisp_extended'].notna()]
 db_path = 'human_genome.db'
 
 
+def map_symbols_to_gene_ids(df, db_path):
+    conn = sqlite3.connect(db_path)
+    mapping_query = "SELECT symbol as Gene, ensembl_gene_id as geneID_short FROM genes"
+    mapping_df = pd.read_sql(mapping_query, conn)
+    conn.close()
+
+    mapped_cnv = pd.merge(df, mapping_df, on='Gene', how='inner')
+
+    return mapped_cnv
+
+
 def get_top_recurrent_genes(df, db_path, n=10):
     gene_counts = df.groupby('geneID_short').agg({
         'geneID_short': 'size',
@@ -305,3 +316,34 @@ def check_direct_trans_interaction(driver_symb, target_symb, db_path):
     if not score.empty:
         return score.iloc[0]['combined_score']
     return None
+
+
+
+def existing_cnv(outlier_df, cnv_df, name="mRNA"):
+    merged = pd.merge(
+        outlier_df,
+        cnv_df[['random_id', 'geneID_short', 'Type']],
+        on=['random_id', 'geneID_short'],
+        how='left'
+    )
+
+    merged['combined_cnv'] = merged['CNV'].fillna('No CNV')
+    mask = merged['Type'].notna()
+    merged.loc[mask, 'combined_cnv'] = merged.loc[mask, 'combined_cnv'] + "_" + merged.loc[mask, 'Type']
+
+    over = merged['zScore'] > 0
+    under = merged['zScore'] < 0
+
+    snv_cis = (under) & (merged['IMPACT_snv'] == 'HIGH')
+    cnv_over_cis = (over) & (merged['combined_cnv'].str.contains('AMP|DUP', case=False))
+    cnv_under_cis = (under) & (merged['combined_cnv'].str.contains('DEL', case=False))
+
+    merged['Mechanism'] = 'trans effect'
+    merged.loc[snv_cis | cnv_over_cis | cnv_under_cis, 'Mechanism'] = 'cis effect'
+
+    summary = merged['Mechanism'].value_counts(normalize=True) * 100
+    print(f"\n--- {name} CNV existing summary-----")
+    print(summary)
+
+    return merged
+
