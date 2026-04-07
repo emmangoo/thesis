@@ -12,10 +12,10 @@ from scipy.stats import mannwhitneyu, fisher_exact, linregress
 
 db_path = 'human_genome.db'
 
-germline = pd.read_parquet('/s/project/cancer_pred/MASTER/final_res/cnv_germline_high_confidence.parquet')
-splicing = pd.read_parquet('/s/project/cancer_pred/MASTER/final_res/fraser_aggregated_outliers_variants.parquet')
-outrider = pd.read_parquet('/s/project/cancer_pred/MASTER/final_res/outrider_or_variants_predisppadjust_cnv.parquet')
-protrider = pd.read_parquet('/s/project/cancer_pred/MASTER/final_res/protrider_pr_variants_predisppadjust_cnv.parquet')
+germline = pd.read_parquet('')
+splicing = pd.read_parquet('')
+outrider = pd.read_parquet('')
+protrider = pd.read_parquet('')
 
 sample_id = 'random_id'
 
