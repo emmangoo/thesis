@@ -4,11 +4,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import sqlite3
 import re
-
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 5000)
 
 exp = pd.read_csv('/s/project/cancer_pred/MASTER/aberrant_expression_outliers.tsv', sep='\t')
+
+#print(exp.head(), '\n\n')
 
 # over = exp[exp['zScore'] > 0]
 # under = exp[exp['zScore'] < 0]
@@ -19,6 +20,7 @@ exp = pd.read_csv('/s/project/cancer_pred/MASTER/aberrant_expression_outliers.ts
 
 
 db_path = 'human_genome.db'
+
 sample_id = 'random_id'
 
 
@@ -40,11 +42,11 @@ def map_gene_ids_to_symbols(df, db_path, id_column='geneID_short'):
     conn.close()
 
     df['clean_id'] = df[id_column].astype(str).str.split('.').str[0]
-
+    
     mapped = pd.merge(df, mapping_df, left_on='clean_id', right_on='geneID_mapping', how='left')
-
+    
     mapped['Gene_Symbol'] = mapped['symbol'].fillna(mapped[id_column])
-
+    
     return mapped.drop(columns=['clean_id', 'geneID_mapping', 'symbol'])
 
 
@@ -82,6 +84,7 @@ def get_top_pathways(df, db_path, n=10):
 
 
 def plot_pathway_comparison(data_dict, n=10):
+
     combined_list = []
 
     for label, df in data_dict.items():
@@ -131,8 +134,8 @@ def plot_pathways_subtypes(full_df, db_path, top_n_pathways=5, top_n_subtypes=6)
 
     orders = {
         s: (plot_df[plot_df['Subtype'] == s]
-            .sort_values('unique_outlier_genes', ascending=False)['pathway_name']
-            .tolist())
+             .sort_values('unique_outlier_genes', ascending=False)['pathway_name']
+             .tolist())
         for s in top_subtypes
     }
 
@@ -206,6 +209,7 @@ def find_cancers_by_pathway_keyword(subtype_dict, keyword):
 
 def plot_pathway_heatmap(subtype_dict, top_n_pathways=30,
                          title=f"Top Pathways Across Cancer Subtypes", figsize_width=20):
+
     all_data = []
     for ca_type, df in subtype_dict.items():
         temp = df.copy()
@@ -214,14 +218,17 @@ def plot_pathway_heatmap(subtype_dict, top_n_pathways=30,
 
     long_df = pd.concat(all_data)
 
+
     pivot_df = long_df.pivot_table(
         index='pathway_name',
         columns='Subtype',
         values='unique_outlier_genes'
     ).fillna(0)
 
+
     top_pathways = pivot_df.sum(axis=1).sort_values(ascending=False).head(top_n_pathways).index
     filtered_pivot = pivot_df.loc[top_pathways]
+
 
     plt.figure(figsize=(figsize_width, 12))
     sns.heatmap(
@@ -238,7 +245,6 @@ def plot_pathway_heatmap(subtype_dict, top_n_pathways=30,
     plt.tight_layout()
     plt.savefig('pathway_heatmap.png')
     plt.show()
-
 
 def cis_trans(hits, cnv_col='CNV'):
     # overexpression zScore > 0, underexpression zScore < 0
@@ -331,7 +337,7 @@ def check_direct_trans_interaction(driver_symb, target_symb, db_path):
     return None
 
 
-# map cis and trans effects for CNV
+# map cis and trans effects for CNV 
 def existing_cnv(outlier_df, cnv_df, name="mRNA"):
     merged = pd.merge(
         outlier_df,
@@ -368,16 +374,16 @@ def plot_entire_cohort_distribution(df):
     dist_pct = unique_samples['Oncotree Code'].value_counts(normalize=True) * 100
 
     plt.figure(figsize=(12, 40))
-    sns.countplot(data=unique_samples, y='Oncotree Code',
-                  order=dist.index, palette='viridis')
-
-    plt.title(f"Full Cohort Diagnosis Distribution (N = {total_patients})",
+    sns.countplot(data=unique_samples, y='Oncotree Code', 
+                order=dist.index, palette='viridis')
+    
+    plt.title(f"Full Cohort Diagnosis Distribution (N = {total_patients})", 
               fontsize=16, fontweight='bold')
     plt.xlabel("Number of Samples")
     plt.ylabel("Oncotree Code")
     plt.grid(axis='x', linestyle='--', alpha=0.6)
     plt.yticks(fontsize=8)
-
+    
     plt.tight_layout()
     plt.savefig('cohort_distribution.png')
     plt.show()
@@ -388,5 +394,5 @@ def plot_entire_cohort_distribution(df):
     })
     print("\n--- COHORT SUMMARY TABLE ---")
     print(summary)
-
+    
     return unique_samples
